@@ -23,8 +23,34 @@ func (s *Server) Health(ctx context.Context, request generated.HealthRequestObje
 	return generated.Health200Response{}, nil
 }
 
+func (s *Server) Get(ctx context.Context, request generated.GetRequestObject) (generated.GetResponseObject, error) {
+	logger := slog.With("handler", "Get")
+	query := `select * from reservation where username = $1 and reservation_uid = $2`
+
+	var reservations []reservation
+	if err := s.db.SelectContext(ctx, &reservations, query, request.Params.XUserName, request.ReservationUid); err != nil {
+		logger.Error("select reservation from db", "error", err)
+		return nil, fmt.Errorf("select reservtion from db: %w", err)
+	}
+
+	if len(reservations) == 0 {
+		return generated.Get404JSONResponse{
+			Message: "reservation not found",
+		}, nil
+	}
+
+	return generated.Get200JSONResponse{
+		BookUid:        reservations[0].BookUid,
+		LibraryUid:     reservations[0].LibraryUid,
+		ReservationUid: reservations[0].ReservationUid,
+		StartDate:      reservations[0].StartDate.Format(time.DateOnly),
+		Status:         generated.BookReservationResponseStatus(reservations[0].Status),
+		TillDate:       reservations[0].TillDate.Format(time.DateOnly),
+	}, nil
+}
+
 func (s *Server) List(ctx context.Context, request generated.ListRequestObject) (generated.ListResponseObject, error) {
-	logger := slog.With("handler", "GET /api/v1/list (List)")
+	logger := slog.With("handler", "List")
 
 	query := `select * from reservation where username = $1`
 
@@ -47,7 +73,7 @@ func (s *Server) List(ctx context.Context, request generated.ListRequestObject) 
 }
 
 func (s *Server) Create(ctx context.Context, request generated.CreateRequestObject) (generated.CreateResponseObject, error) {
-	logger := slog.With("handler", "POST /api/v1/list (Create)")
+	logger := slog.With("handler", "Create")
 
 	now := time.Now()
 	till, err := time.Parse(time.DateOnly, request.Body.TillDate)
@@ -89,7 +115,7 @@ func (s *Server) Create(ctx context.Context, request generated.CreateRequestObje
 }
 
 func (s *Server) Finish(ctx context.Context, request generated.FinishRequestObject) (generated.FinishResponseObject, error) {
-	logger := slog.With("handler", "POST /api/v1/reservations/{reservationUid}/return (Finish)")
+	logger := slog.With("handler", "Finish")
 
 	query := `select * from reservation where reservation_uid = $1 and username = $2`
 
@@ -123,5 +149,7 @@ func (s *Server) Finish(ctx context.Context, request generated.FinishRequestObje
 		return nil, fmt.Errorf("update reservation status: %w", err)
 	}
 
-	return generated.Finish204Response{}, nil
+	return generated.Finish200JSONResponse{
+		Violation: status == expired,
+	}, nil
 }

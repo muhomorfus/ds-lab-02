@@ -63,6 +63,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/ValidationErrorResponse"
 
+  /api/v1/reservations/{reservationUid}:
+    get:
+      summary: Получить информацию конкретно взятому бронированию
+      operationId: get
+      parameters:
+        - name: reservationUid
+          in: path
+          description: UUID бронирования
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-User-Name
+          in: header
+          description: Имя пользователя
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Информация по бронированию
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookReservationResponse"
+        "404":
+          description: Бронирование не найдено
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /api/v1/reservations/{reservationUid}/return:
     post:
       summary: Вернуть книгу
@@ -85,10 +117,14 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ReturnBookRequest"
+              $ref: "#/components/schemas/FinishReservationRequest"
       responses:
-        "204":
+        "200":
           description: Книга успешно возвращена
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinishReservationResponse"
         "404":
           description: Бронирование не найдено
           content:
@@ -219,7 +255,7 @@ components:
           description: UUID библиотеки
           format: uuid
 
-    ReturnBookRequest:
+    FinishReservationRequest:
       type: object
       required:
         - date
@@ -232,6 +268,15 @@ components:
           type: string
           description: Дата возврата
           format: ISO 8601
+
+    FinishReservationResponse:
+      type: object
+      required:
+        - violation
+      properties:
+        violation:
+          type: boolean
+          description: Нарушены ли правила окончания брони
 
     ErrorDescription:
       type: object

@@ -66,10 +66,16 @@ type ErrorResponse struct {
 	Message string `json:"message"`
 }
 
-// ReturnBookRequest defines model for ReturnBookRequest.
-type ReturnBookRequest struct {
+// FinishReservationRequest defines model for FinishReservationRequest.
+type FinishReservationRequest struct {
 	// Date Дата возврата
 	Date string `json:"date"`
+}
+
+// FinishReservationResponse defines model for FinishReservationResponse.
+type FinishReservationResponse struct {
+	// Violation Нарушены ли правила окончания брони
+	Violation bool `json:"violation"`
 }
 
 // TakeBookRequest defines model for TakeBookRequest.
@@ -129,6 +135,12 @@ type CreateParams struct {
 	XUserName string `json:"X-User-Name"`
 }
 
+// GetParams defines parameters for Get.
+type GetParams struct {
+	// XUserName Имя пользователя
+	XUserName string `json:"X-User-Name"`
+}
+
 // FinishParams defines parameters for Finish.
 type FinishParams struct {
 	// XUserName Имя пользователя
@@ -139,7 +151,7 @@ type FinishParams struct {
 type CreateJSONRequestBody = TakeBookRequest
 
 // FinishJSONRequestBody defines body for Finish for application/json ContentType.
-type FinishJSONRequestBody = ReturnBookRequest
+type FinishJSONRequestBody = FinishReservationRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -149,6 +161,9 @@ type ServerInterface interface {
 	// Взять книгу в библиотеке
 	// (POST /api/v1/reservations)
 	Create(ctx echo.Context, params CreateParams) error
+	// Получить информацию конкретно взятому бронированию
+	// (GET /api/v1/reservations/{reservationUid})
+	Get(ctx echo.Context, reservationUid openapi_types.UUID, params GetParams) error
 	// Вернуть книгу
 	// (POST /api/v1/reservations/{reservationUid}/return)
 	Finish(ctx echo.Context, reservationUid openapi_types.UUID, params FinishParams) error
@@ -221,6 +236,44 @@ func (w *ServerInterfaceWrapper) Create(ctx echo.Context) error {
 
 	// Invoke the callback with all the unmarshaled arguments
 	err = w.Handler.Create(ctx, params)
+	return err
+}
+
+// Get converts echo context to params.
+func (w *ServerInterfaceWrapper) Get(ctx echo.Context) error {
+	var err error
+	// ------------- Path parameter "reservationUid" -------------
+	var reservationUid openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "reservationUid", ctx.Param("reservationUid"), &reservationUid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter reservationUid: %s", err))
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetParams
+
+	headers := ctx.Request().Header
+	// ------------- Required header parameter "X-User-Name" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-User-Name")]; found {
+		var XUserName string
+		n := len(valueList)
+		if n != 1 {
+			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Expected one value for X-User-Name, got %d", n))
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-User-Name", valueList[0], &XUserName, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true})
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Invalid format for parameter X-User-Name: %s", err))
+		}
+
+		params.XUserName = XUserName
+	} else {
+		return echo.NewHTTPError(http.StatusBadRequest, fmt.Sprintf("Header parameter X-User-Name is required, but not found"))
+	}
+
+	// Invoke the callback with all the unmarshaled arguments
+	err = w.Handler.Get(ctx, reservationUid, params)
 	return err
 }
 
@@ -301,6 +354,7 @@ func RegisterHandlersWithBaseURL(router EchoRouter, si ServerInterface, baseURL 
 
 	router.GET(baseURL+"/api/v1/reservations", wrapper.List)
 	router.POST(baseURL+"/api/v1/reservations", wrapper.Create)
+	router.GET(baseURL+"/api/v1/reservations/:reservationUid", wrapper.Get)
 	router.POST(baseURL+"/api/v1/reservations/:reservationUid/return", wrapper.Finish)
 	router.GET(baseURL+"/manage/health", wrapper.Health)
 
@@ -350,6 +404,33 @@ func (response Create400JSONResponse) VisitCreateResponse(w http.ResponseWriter)
 	return json.NewEncoder(w).Encode(response)
 }
 
+type GetRequestObject struct {
+	ReservationUid openapi_types.UUID `json:"reservationUid"`
+	Params         GetParams
+}
+
+type GetResponseObject interface {
+	VisitGetResponse(w http.ResponseWriter) error
+}
+
+type Get200JSONResponse BookReservationResponse
+
+func (response Get200JSONResponse) VisitGetResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type Get404JSONResponse ErrorResponse
+
+func (response Get404JSONResponse) VisitGetResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type FinishRequestObject struct {
 	ReservationUid openapi_types.UUID `json:"reservationUid"`
 	Params         FinishParams
@@ -360,12 +441,13 @@ type FinishResponseObject interface {
 	VisitFinishResponse(w http.ResponseWriter) error
 }
 
-type Finish204Response struct {
-}
+type Finish200JSONResponse FinishReservationResponse
 
-func (response Finish204Response) VisitFinishResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
-	return nil
+func (response Finish200JSONResponse) VisitFinishResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
 }
 
 type Finish404JSONResponse ErrorResponse
@@ -400,6 +482,9 @@ type StrictServerInterface interface {
 	// Взять книгу в библиотеке
 	// (POST /api/v1/reservations)
 	Create(ctx context.Context, request CreateRequestObject) (CreateResponseObject, error)
+	// Получить информацию конкретно взятому бронированию
+	// (GET /api/v1/reservations/{reservationUid})
+	Get(ctx context.Context, request GetRequestObject) (GetResponseObject, error)
 	// Вернуть книгу
 	// (POST /api/v1/reservations/{reservationUid}/return)
 	Finish(ctx context.Context, request FinishRequestObject) (FinishResponseObject, error)
@@ -470,6 +555,32 @@ func (sh *strictHandler) Create(ctx echo.Context, params CreateParams) error {
 		return err
 	} else if validResponse, ok := response.(CreateResponseObject); ok {
 		return validResponse.VisitCreateResponse(ctx.Response())
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// Get operation middleware
+func (sh *strictHandler) Get(ctx echo.Context, reservationUid openapi_types.UUID, params GetParams) error {
+	var request GetRequestObject
+
+	request.ReservationUid = reservationUid
+	request.Params = params
+
+	handler := func(ctx echo.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.Get(ctx.Request().Context(), request.(GetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Get")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return err
+	} else if validResponse, ok := response.(GetResponseObject); ok {
+		return validResponse.VisitGetResponse(ctx.Response())
 	} else if response != nil {
 		return fmt.Errorf("unexpected response type: %T", response)
 	}

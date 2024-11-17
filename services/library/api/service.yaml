@@ -1,6 +1,6 @@
 openapi: 3.0.1
 info:
-  title: Library System
+  title: Library Service
   version: "1.0"
 servers:
   - url: http://localhost:8080
@@ -17,8 +17,6 @@ paths:
     get:
       summary: Получить список библиотек в городе
       operationId: listLibraries
-      tags:
-        - Gateway API
       parameters:
         - name: page
           in: query
@@ -51,8 +49,6 @@ paths:
     get:
       summary: Получить список книг в выбранной библиотеке
       operationId: listBooks
-      tags:
-        - Gateway API
       parameters:
         - name: page
           in: query
@@ -87,53 +83,70 @@ paths:
               schema:
                 $ref: "#/components/schemas/LibraryBookPaginationResponse"
 
-  /api/v1/reservations:
+  /api/v1/libraries/{libraryUid}:
     get:
-      summary: Получить информацию по всем взятым в прокат книгам пользователя
-      operationId: listReservations
-      tags:
-        - Gateway API
+      summary: Получить информацию о библиотеке
+      operationId: getLibrary
       parameters:
-        - name: X-User-Name
-          in: header
-          description: Имя пользователя
+        - name: libraryUid
+          in: path
           required: true
+          description: UUID библиотеки
           schema:
             type: string
+            format: uuid
       responses:
         "200":
-          description: Информация по всем взятым в прокат книгам
+          description: Информация о библиотеке
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/BookReservationResponse"
+                $ref: "#/components/schemas/LibraryResponse"
 
+  /api/v1/books/{bookUid}:
+    get:
+      summary: Получить информацию о книге
+      operationId: getBook
+      parameters:
+        - name: bookUid
+          in: path
+          required: true
+          description: UUID книги
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Информация о книге
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BookInfo"
+
+  /api/v1/libraries/{libraryUid}/books/{bookUid}:
     post:
       summary: Взять книгу в библиотеке
       operationId: takeBook
       tags:
         - Gateway API
       parameters:
-        - name: X-User-Name
-          in: header
-          description: Имя пользователя
+        - name: libraryUid
+          in: path
           required: true
+          description: UUID библиотеки
           schema:
             type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TakeBookRequest"
+            format: uuid
+        - name: bookUid
+          in: path
+          required: true
+          description: UUID книги
+          schema:
+            type: string
+            format: uuid
       responses:
-        "200":
-          description: Информация о бронировании
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/TakeBookResponse"
+        "204":
+          description: Книга получена
         "400":
           description: Ошибка валидации данных
           content:
@@ -141,61 +154,46 @@ paths:
               schema:
                 $ref: "#/components/schemas/ValidationErrorResponse"
 
-  /api/v1/reservations/{reservationUid}/return:
+  /api/v1/libraries/{libraryUid}/books/{bookUid}/return:
     post:
-      summary: Вернуть книгу
+      summary: Вернуть книгу в библиотеку
       operationId: returnBook
       tags:
         - Gateway API
       parameters:
-        - name: reservationUid
+        - name: libraryUid
           in: path
-          description: UUID бронирования
           required: true
+          description: UUID библиотеки
           schema:
             type: string
             format: uuid
-        - name: X-User-Name
-          in: header
-          description: Имя пользователя
+        - name: bookUid
+          in: path
           required: true
+          description: UUID книги
           schema:
             type: string
+            format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               $ref: "#/components/schemas/ReturnBookRequest"
       responses:
-        "204":
-          description: Книга успешно возвращена
-        "404":
-          description: Бронирование не найдено
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-
-  /api/v1/rating:
-    get:
-      summary: Получить рейтинг пользователя
-      operationId: getRating
-      tags:
-        - Gateway API
-      parameters:
-        - name: X-User-Name
-          in: header
-          description: Имя пользователя
-          required: true
-          schema:
-            type: string
-      responses:
         "200":
-          description: Рейтинг пользователя
+          description: Книга возвращена
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UserRatingResponse"
+                $ref: "#/components/schemas/ViolationStatus"
+        "400":
+          description: Ошибка валидации данных
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationErrorResponse"
 
 components:
   schemas:
@@ -341,154 +339,13 @@ components:
           type: integer
           description: Количество книг, доступных для аренды в библиотеке
 
-    BookReservationResponse:
-      type: object
-      required:
-        - reservationUid
-        - status
-        - startDate
-        - tillDate
-        - book
-        - library
-      example:
-        {
-          "reservationUid": "f464ca3a-fcf7-4e3f-86f0-76c7bba96f72",
-          "status": "RENTED",
-          "startDate": "2021-10-09",
-          "tillDate": "2021-10-11",
-          "book": {
-            "bookUid": "f7cdc58f-2caf-4b15-9727-f89dcc629b27",
-            "name": "Краткий курс C++ в 7 томах",
-            "author": "Бьерн Страуструп",
-            "genre": "Научная фантастика"
-          },
-          "library": {
-            "libraryUid": "83575e12-7ce0-48ee-9931-51919ff3c9ee",
-            "name": "Библиотека имени 7 Непьющих",
-            "address": "2-я Бауманская ул., д.5, стр.1",
-            "city": "Москва"
-          }
-        }
-      properties:
-        reservationUid:
-          type: string
-          description: UUID бронирования
-          format: uuid
-        status:
-          type: string
-          description: Статус бронирования книги
-          enum:
-            - RENTED
-            - RETURNED
-            - EXPIRED
-        startDate:
-          type: string
-          description: Дата начала бронирования
-          format: ISO 8601
-        tillDate:
-          type: string
-          description: Дата окончания бронирования
-          format: ISO 8601
-        book:
-          $ref: "#/components/schemas/BookInfo"
-        library:
-          $ref: "#/components/schemas/LibraryResponse"
-
-    TakeBookRequest:
-      type: object
-      required:
-        - bookUid
-        - libraryUid
-        - tillDate
-      example:
-        {
-          "bookUid": "f7cdc58f-2caf-4b15-9727-f89dcc629b27",
-          "libraryUid": "83575e12-7ce0-48ee-9931-51919ff3c9ee",
-          "tillDate": "2021-10-11"
-        }
-      properties:
-        bookUid:
-          type: string
-          description: UUID книги
-          format: uuid
-        libraryUid:
-          type: string
-          description: UUID библиотеки
-          format: uuid
-        tillDate:
-          type: string
-          description: Дата окончания бронирования
-          format: ISO 8601
-
-    TakeBookResponse:
-      type: object
-      required:
-        - reservationUid
-        - status
-        - startDate
-        - tillDate
-        - book
-        - library
-        - rating
-      example:
-        {
-          "reservationUid": "f464ca3a-fcf7-4e3f-86f0-76c7bba96f72",
-          "status": "RENTED",
-          "startDate": "2021-10-09",
-          "tillDate": "2021-10-11",
-          "book": {
-            "bookUid": "f7cdc58f-2caf-4b15-9727-f89dcc629b27",
-            "name": "Краткий курс C++ в 7 томах",
-            "author": "Бьерн Страуструп",
-            "genre": "Научная фантастика",
-          },
-          "library": {
-            "libraryUid": "83575e12-7ce0-48ee-9931-51919ff3c9ee",
-            "name": "Библиотека имени 7 Непьющих",
-            "address": "2-я Бауманская ул., д.5, стр.1",
-            "city": "Москва"
-          },
-          "rating": {
-            "stars": 75
-          }
-        }
-      properties:
-        reservationUid:
-          type: string
-          description: UUID бронирования
-          format: uuid
-        status:
-          type: string
-          description: Статус бронирования книги
-          enum:
-            - RENTED
-            - RETURNED
-            - EXPIRED
-            - LOST
-        startDate:
-          type: string
-          description: Дата начала бронирования
-          format: ISO 8601
-        tillDate:
-          type: string
-          description: Дата окончания бронирования
-          format: ISO 8601
-        book:
-          $ref: "#/components/schemas/BookInfo"
-        library:
-          $ref: "#/components/schemas/LibraryResponse"
-        rating:
-          $ref: "#/components/schemas/UserRatingResponse"
-
     ReturnBookRequest:
       type: object
       required:
         - condition
-        - date
       example:
         {
-          "condition": "EXCELLENT",
-          "date": "2021-10-11"
+          "condition": "EXCELLENT"
         }
       properties:
         condition:
@@ -498,25 +355,15 @@ components:
             - EXCELLENT
             - GOOD
             - BAD
-        date:
-          type: string
-          description: Дата возврата
-          format: ISO 8601
 
-    UserRatingResponse:
+    ViolationStatus:
       type: object
       required:
-        - stars
-      example:
-        {
-          "stars": 75
-        }
+        - violation
       properties:
-        stars:
-          type: integer
-          description: Количество здесь у пользователя
-          minimum: 0
-          maximum: 100
+        violation:
+          type: boolean
+          description: Нарушены ли правила возврата книг
 
     BookInfo:
       type: object
